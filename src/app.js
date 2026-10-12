@@ -8,6 +8,7 @@ import authRoutes from "./routes/auth.js";
 import plotsRoutes from "./routes/plots.js";
 import indexRoutes from "./routes/indexRoutes.js";
 import adminRoutes from "./routes/admin.js";
+import adminPlotsRoutes from "./routes/adminPlots.js";
 
 const app = express();
 
@@ -27,7 +28,8 @@ app.use(
     credentials: true,
   })
 );
-app.use(express.json({ limit: "1mb" }));
+app.use(express.json({ limit: "2mb" }));
+app.use(express.urlencoded({ extended: true }));
 app.use(morgan(env.NODE_ENV === "production" ? "combined" : "dev"));
 
 app.get("/health", (_req, res) =>
@@ -41,6 +43,7 @@ app.get("/health", (_req, res) =>
 app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/plots", plotsRoutes);
 app.use("/api/v1/index", indexRoutes);
+app.use("/api/v1/admin/plots", adminPlotsRoutes);
 app.use("/api/v1/admin", adminRoutes);
 
 app.use((_req, res) => fail(res, "Not found", 404));

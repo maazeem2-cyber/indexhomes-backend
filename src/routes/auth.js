@@ -137,6 +137,118 @@ router.get("/me", requireAuth, async (req, res) => {
   });
 });
 
+router.post("/forgot-password", async (req, res, next) => {
+  try {
+    assertSupabaseConfigured();
+    const email = z.string().email().parse(req.body?.email);
+    const { error } = await supabaseAnon.auth.resetPasswordForEmail(email, {
+      redirectTo: `${env.FRONTEND_URL}/auth/reset-password`,
+    });
+    if (error) return fail(res, error.message, 400);
+    return ok(res, {
+      message: "If that email is registered, you will receive a password reset link shortly.",
+    });
+  } catch (err) {
+    if (err.name === "ZodError") return fail(res, err.errors[0]?.message || "Invalid email", 422);
+    return next(err);
+  }
+});
+
+router.patch("/profile", requireAuth, async (req, res, next) => {
+  try {
+    assertSupabaseConfigured();
+    const display_name = z.string().min(2).max(80).parse(req.body?.display_name);
+
+    const { data, error } = await supabaseAdmin
+      .from("profiles")
+      .update({ display_name })
+      .eq("id", req.user.id)
+      .select("*")
+      .maybeSingle();
+
+    if (error) return fail(res, error.message, 500);
+    if (!data) return fail(res, "Profile not found", 404);
+
+    await supabaseAdmin.auth.admin.updateUserById(req.user.id, {
+      user_metadata: {
+        ...(req.user.user_metadata || {}),
+        display_name,
+      },
+    });
+
+    return ok(res, { profile: data });
+  } catch (err) {
+    if (err.name === "ZodError") return fail(res, err.errors[0]?.message || "Invalid input", 422);
+    return next(err);
+  }
+});
+
+router.post("/change-password", requireAuth, async (req, res, next) => {
+  try {
+    assertSupabaseConfigured();
+    const schema = z.object({
+      current_password: z.string().min(1),
+      new_password: z.string().min(8),
+      confirm_password: z.string().min(8),
+    });
+    const body = schema.parse(req.body);
+    if (body.new_password !== body.confirm_password) {
+      return fail(res, "New password and confirmation do not match", 422);
+    }
+    if (body.current_password === body.new_password) {
+      return fail(res, "New password must be different from the current password", 422);
+    }
+
+    const email = req.user.email;
+    if (!email) return fail(res, "Account email is missing", 400);
+
+    const { error: verifyError } = await supabaseAnon.auth.signInWithPassword({
+      email,
+      password: body.current_password,
+    });
+    if (verifyError) return fail(res, "Current password is incorrect", 401);
+
+    const { error } = await supabaseAdmin.auth.admin.updateUserById(req.user.id, {
+      password: body.new_password,
+    });
+    if (error) return fail(res, error.message, 400);
+
+    return ok(res, { message: "Password updated successfully" });
+  } catch (err) {
+    if (err.name === "ZodError") return fail(res, err.errors[0]?.message || "Invalid input", 422);
+    return next(err);
+  }
+});
+
+router.post("/reset-password", async (req, res, next) => {
+  try {
+    assertSupabaseConfigured();
+    const schema = z.object({
+      access_token: z.string().min(10),
+      refresh_token: z.string().optional(),
+      new_password: z.string().min(8),
+      confirm_password: z.string().min(8),
+    });
+    const body = schema.parse(req.body);
+    if (body.new_password !== body.confirm_password) {
+      return fail(res, "New password and confirmation do not match", 422);
+    }
+
+    const { data: userData, error: userError } = await supabaseAnon.auth.getUser(body.access_token);
+    if (userError || !userData.user) return fail(res, "Reset link is invalid or expired", 401);
+
+    const { error } = await supabaseAdmin.auth.admin.updateUserById(userData.user.id, {
+      password: body.new_password,
+    });
+    if (error) return fail(res, error.message, 400);
+
+    return ok(res, { message: "Password has been reset. You can sign in with your new password." });
+  } catch (err) {
+    if (err.name === "ZodError") return fail(res, err.errors[0]?.message || "Invalid input", 422);
+    return next(err);
+  }
+});
+
 router.post("/logout", requireAuth, async (req, res, next) => {
   try {
     await supabaseAdmin.auth.admin.signOut(req.user.accessToken);
