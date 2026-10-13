@@ -86,6 +86,13 @@ router.post("/login", async (req, res, next) => {
       .eq("id", data.user.id)
       .maybeSingle();
 
+    if (profile && profile.is_active === false) {
+      await supabaseAdmin.auth.admin.updateUserById(data.user.id, {
+        ban_duration: "876000h",
+      });
+      return fail(res, "This account has been deactivated. Contact support for help.", 403);
+    }
+
     return ok(res, {
       user: {
         id: data.user.id,

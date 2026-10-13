@@ -46,6 +46,9 @@ export async function requireAuth(req, res, next) {
 
     if (profileError) return fail(res, profileError.message, 500);
     if (!profile) return fail(res, "Profile not found", 404);
+    if (profile.is_active === false) {
+      return fail(res, "This account has been deactivated", 403);
+    }
 
     req.user = { ...data.user, profile, accessToken: token };
     return next();
